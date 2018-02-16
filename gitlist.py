@@ -51,15 +51,9 @@ class GitList:
                 # Create a copy of the current dataset to enable diff later
                 new = copy.deepcopy(old)
 
-                #macro = loader.load_asset(old['entity'])
                 macro = self._load_as_set(old['entity'])
 
-                #if not 'members' in new:
-                    #new['members'] = {}
                 new['members'] = self._load_as_set(old['entity'])
-
-                #new["members"]["ipv4"] = [ str(x) for x in macro.inet ]
-                #new["members"]["ipv6"] = [ str(x) for x in macro.inet6 ]
 
                 if old == new:
                     # No changes has been made to as-set
