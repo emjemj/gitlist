@@ -51,8 +51,6 @@ class GitList:
                 # Create a copy of the current dataset to enable diff later
                 new = copy.deepcopy(old)
 
-                macro = self._load_as_set(old['entity'])
-
                 new['members'] = self._load_as_set(old['entity'])
 
                 if old == new:
