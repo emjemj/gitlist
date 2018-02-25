@@ -15,7 +15,7 @@ class GitList:
     def skeleton(cls, path):
         """ Generate a skeleton entity file and write to path """
         obj ={
-            "deploy_at": None,
+            "targets": None,
             "description": "A description", 
             "entity": "AS-SAMPLE",
             "name": "CUST-AS65000",
@@ -73,6 +73,12 @@ class GitList:
             cfg = yaml.load(stream)
             self.repo_path = cfg["repo"]["path"]
             self.workdir = cfg["workdir"]
+
+            if "templates" in cfg:
+                self.templates = cfg["templates"]
+
+            if "targets" in cfg:
+                self.targets = cfg["targets"]
 
     def _load_as_set(self, as_set):
         """ load data with bgpq3 """
