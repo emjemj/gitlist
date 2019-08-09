@@ -9,7 +9,7 @@ gitlist depends on a number of other projects
 
  * bgpq3
  * python
- * gitpython
+ * dulwich
  * pyyaml
 
 ### Configuration
@@ -17,12 +17,11 @@ A small configuration is needed, it looks like this. Please adjust paths as nece
 
 ```yaml
 repo:
- path: /var/lib/gitlist/datastore.git
-workdir: /tmp/gitlist.scratch
+ path: https://github.com/emjemj/some-repo
 ```
 
 ### Initial setup
-Initialize git repo with `gitlist.py --init-bare <path>`. You then need to add source files to your recently created git repository.
+ You then need to add source files to your git repository.
 
 Clone to a temporary place, add a skeleton file with `gitlist.py --skeleton <path>` and edit it. You then commit and push the newly created file.
 
