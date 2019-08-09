@@ -10,6 +10,7 @@ from dulwich import porcelain
 from dulwich.objects import Blob
 from dulwich.repo import MemoryRepo
 
+
 class GitList:
 
     def __init__(self, config):
@@ -18,8 +19,8 @@ class GitList:
     @classmethod
     def skeleton(cls, path):
         """ Generate a skeleton entity file and write to path """
-        obj ={
-            "description": "A description", 
+        obj = {
+            "description": "A description",
             "entity": "AS-SAMPLE",
         }
 
@@ -46,7 +47,7 @@ class GitList:
             else:
                 print("Found new prefixes")
                 contents = yaml.dump(new, default_flow_style=False)
-                
+
                 repo.add(f.path, contents)
                 commit = True
 
@@ -62,12 +63,12 @@ class GitList:
 
     def _load_as_set(self, as_set):
         """ load data with bgpq3 """
-        obj = { 'ipv4': [], 'ipv6': [] }
+        obj = {'ipv4': [], 'ipv6': []}
 
-        for e in self._run_bgpq3([ '-3j4', as_set ]):
+        for e in self._run_bgpq3(['-3j4', as_set]):
             obj['ipv4'].append(e['prefix'])
 
-        for e in self._run_bgpq3([ '-3j6', as_set ]):
+        for e in self._run_bgpq3(['-3j6', as_set]):
             obj['ipv6'].append(e['prefix'])
 
         # Sort lists to avoid changes from ordering
@@ -80,12 +81,13 @@ class GitList:
         import subprocess
         import json
 
-        cmd = [ 'bgpq3'] + cmd
+        cmd = ['bgpq3'] + cmd
 
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, cwd='/')
         output = p.communicate()
 
         return json.loads(output[0].decode("UTF-8"))["NN"]
+
 
 class GitRepo:
     """ simple abstraction for dulwich """
@@ -93,7 +95,7 @@ class GitRepo:
     def __init__(self, url):
         """ initialize dulwich magic """
         self.repo_url = url
-        
+
         # We have two repository handles, one for reading and one for writing.
         self.rorepo = MemoryRepo()
         self.rwrepo = MemoryRepo()
@@ -103,8 +105,10 @@ class GitRepo:
         porcelain.fetch(self.rorepo, self.repo_url)
         porcelain.fetch(self.rwrepo, self.repo_url)
 
-        self.rorepo[b'refs/heads/master'] = self.rorepo[b'refs/remotes/origin/master']
-        self.rwrepo[b'refs/heads/master'] = self.rwrepo[b'refs/remotes/origin/master']
+        self.rorepo[b'refs/heads/master'] = self.rorepo[
+            b'refs/remotes/origin/master']
+        self.rwrepo[b'refs/heads/master'] = self.rwrepo[
+            b'refs/remotes/origin/master']
 
         self.rotree = self.rorepo[self.rorepo[b'HEAD'].tree]
         self.rwtree = self.rwrepo[self.rwrepo[b'HEAD'].tree]
@@ -141,8 +145,10 @@ class GitRepo:
         if push:
             porcelain.push(self.rwrepo, self.repo_url, 'master')
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser("gitlist, version controlled prefix lists")
+    parser = argparse.ArgumentParser(
+        "gitlist, version controlled prefix lists")
     parser.add_argument("--skeleton", help="Create a new source file",
                         required=False)
     parser.add_argument("--config", help="Configuration file",
