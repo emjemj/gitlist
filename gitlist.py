@@ -1,10 +1,16 @@
 import argparse
 import yaml
-import git
+#import git
 import os
 import copy
 import sys
 import shutil
+import stat
+import time
+
+from dulwich import porcelain
+from dulwich.objects import Blob
+from dulwich.repo import MemoryRepo
 
 class GitList:
 
@@ -15,70 +21,46 @@ class GitList:
     def skeleton(cls, path):
         """ Generate a skeleton entity file and write to path """
         obj ={
-            "targets": None,
             "description": "A description", 
             "entity": "AS-SAMPLE",
-            "name": "CUST-AS65000",
         }
 
         fpath = "{}.yml".format(path)
         cls.write(fpath, obj)
 
-    @classmethod
-    def write(cls, path, contents):
-        """ Write dict from contents to file in path """
-        with open(path, "w") as stream:
-            stream.write(yaml.dump(contents, default_flow_style=False))
-
     def run(self):
         """ Loop over yml files in repo and pull them from irr """
-        repo = Repo(self.repo_path, self.workdir)
-        repo.clone()
 
+        repo = GitRepo(self.repo_path)
         commit = False
-        for f in os.listdir(self.workdir):
-            fpath = os.path.join(repo.workdir, f)
-            if not os.path.isfile(fpath):
-                # Ignore directories
+
+        for f in repo:
+            if f.path[-3:] != b'yml':
                 continue
-            if not f[-3:] == "yml":
-                # Ignore non-yaml files
-                continue
+            contents = repo.read(f)
 
-            with open(fpath, 'r') as stream:
-                old = yaml.load(stream)
+            old = yaml.load(contents, Loader=yaml.BaseLoader)
+            new = copy.deepcopy(old)
+            new['members'] = self._load_as_set(old['entity'])
 
-                # Create a copy of the current dataset to enable diff later
-                new = copy.deepcopy(old)
+            if old == new:
+                print("No changes found")
+            else:
+                print("Found new prefixes")
+                contents = yaml.dump(new, default_flow_style=False)
+                
+                repo.add(f.path, contents)
+                commit = True
 
-                new['members'] = self._load_as_set(old['entity'])
-
-                if old == new:
-                    # No changes has been made to as-set
-                    print("No changes found")
-                else:
-                    # New prefixes found, commit them
-                    print("New prefixes found, commiting")
-                    repo.add(f, new)
-                    commit = True
         if commit:
-            # some changes were made to the repo
-            repo.commit()
-
-        repo.cleanup()
+            print("Committing")
+            repo.commit("Updated prefix lists")
 
     def _parse_config(self, config):
         """ Initialize from config file """
         with open(config, 'r') as stream:
-            cfg = yaml.load(stream)
+            cfg = yaml.load(stream, Loader=yaml.BaseLoader)
             self.repo_path = cfg["repo"]["path"]
-            self.workdir = cfg["workdir"]
-
-            if "templates" in cfg:
-                self.templates = cfg["templates"]
-
-            if "targets" in cfg:
-                self.targets = cfg["targets"]
 
     def _load_as_set(self, as_set):
         """ load data with bgpq3 """
@@ -107,62 +89,67 @@ class GitList:
 
         return json.loads(output[0].decode("UTF-8"))["NN"]
 
-class Repo:
-    """ Simple abstraction for gitpython """
+class GitRepo:
+    """ simple abstraction for dulwich """
 
-    def __init__(self, path, workdir):
-        """ path is a bare repo, workdir is a directory where we can 
-            checkout the repo 
-        """
-        self.path = path
-        self.workdir = workdir
-        self.files_added = False
+    def __init__(self, url):
+        """ initialize dulwich magic """
+        self.repo_url = url
+        
+        # We have two repository handles, one for reading and one for writing.
+        self.rorepo = MemoryRepo()
+        self.rwrepo = MemoryRepo()
+        self.rorepo.refs.set_symbolic_ref(b'HEAD', b'refs/heads/master')
+        self.rwrepo.refs.set_symbolic_ref(b'HEAD', b'refs/heads/master')
 
-    @classmethod
-    def init_bare(cls, path):
-        """ Initialize bare git repo """
-        repo = git.Repo.init(path, bare=True)
+        porcelain.fetch(self.rorepo, self.repo_url)
+        porcelain.fetch(self.rwrepo, self.repo_url)
 
-    def clone(self):
-        """ Clone our bare repo """
-        self.bare_repo = git.repo.Repo(self.path)
-        self.repo = self.bare_repo.clone(self.workdir)
+        self.rorepo[b'refs/heads/master'] = self.rorepo[b'refs/remotes/origin/master']
+        self.rwrepo[b'refs/heads/master'] = self.rwrepo[b'refs/remotes/origin/master']
 
-    def add(self, filename, contents):
-        """ Add a file to commit """
-        path = os.path.join(self.workdir, filename)
+        self.rotree = self.rorepo[self.rorepo[b'HEAD'].tree]
+        self.rwtree = self.rwrepo[self.rwrepo[b'HEAD'].tree]
 
-        GitList.write(path, contents)
+    def __iter__(self):
+        """ iterate over items in ro tree """
+        for item in self.rotree.iteritems():
+            yield item
 
-        self.repo.index.add([path])
-        self.files_added = True
+    def read(self, item):
+        """ Read contents of a file from the ro repo """
+        _, contents = self.rorepo.object_store.get_raw(item.sha)
 
-    def commit(self, message='Files updated'):
-        """ Commit added files to repo """
-        if not self.files_added:
-            return
+        return contents
 
-        self.repo.index.commit(message)
-        self.repo.remotes.origin.push()
+    def add(self, name, contents):
+        """ Add a file to the repository """
+        blob = Blob.from_string(contents.encode('utf-8'))
 
-    def cleanup(self):
-        """ Remove workdir """
-        shutil.rmtree(self.workdir)
+        self.rwrepo.object_store.add_object(blob)
+
+        self.rwtree.add(name, stat.S_IFREG, blob.id)
+
+        self.rwrepo.object_store.add_object(self.rwtree)
+
+    def commit(self, message, push=True):
+        """ commit to repo and optionally push to remote """
+        self.rwrepo.do_commit(
+            message=message.encode('utf-8'),
+            ref=b'refs/heads/master',
+            tree=self.rwtree.id
+        )
+
+        if push:
+            porcelain.push(self.rwrepo, self.repo_url, 'master')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser("gitlist, version controlled prefix lists")
-    parser.add_argument("--init-bare", help="Initialize a new repository",
-                        required=False)
     parser.add_argument("--skeleton", help="Create a new source file",
                         required=False)
     parser.add_argument("--config", help="Configuration file",
                         required=False)
     args = parser.parse_args()
-
-    if args.init_bare:
-        # Initialize a new git repo
-        Repo.init_bare(args.init_bare)
-        sys.exit(0)
 
     if args.skeleton:
         # Initialize a new skeleton file
